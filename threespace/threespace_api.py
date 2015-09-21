@@ -1,14 +1,14 @@
 #!/usr/bin/env python2.7
 from __future__ import print_function
 
-"""This module is an API module for ThreeSpace devices.
-
-The ThreeSpace API module is a collection of classes, functions, structures, and
-static variables use exclusivly for ThreeSpace devices. This module can be used
-with a system running Python 2.5 and newer (including Python 3.x).
+""" This module is an API module for ThreeSpace devices.
+    
+    The ThreeSpace API module is a collection of classes, functions, structures,
+    and static variables use exclusivly for ThreeSpace devices. This module can
+    be used with a system running Python 2.5 and newer (including Python 3.x).
 """
 
-__version__ = "2.0.1.0"
+__version__ = "2.0.2.3"
 
 __authors__ = [
     '"Chris George" <cgeorge@yeitechnology.com>',
@@ -25,7 +25,7 @@ import time
 import os
 
 # chose an implementation, depending on os
-if os.name == 'nt': #sys.platform == 'win32':
+if os.name == 'nt': # sys.platform == 'win32':
     from win32_threespace_utils import *
 else:
     from threespace_utils import *
@@ -51,8 +51,8 @@ TSS_BUTTON_RIGHT = 1
 
 ### Private ###
 _baudrate = 115200
-_allowed_baudrates = [1200, 2400, 4800, 9600, 19200, 28800, 38400, 57600,
-                        115200, 230400, 460800, 921600]
+_allowed_baudrates = [1200, 2400, 4800, 9600, 19200, 28800, 38400, 57600, 115200, 230400, 460800, 921600]
+_wireless_retries = 5
 
 ### Functions ###
 if sys.version_info >= (3, 0):
@@ -64,7 +64,7 @@ if sys.version_info >= (3, 0):
             rtn_array.append(command_byte)
         if data is not None:
             rtn_array += data
-        rtn_array.append((sum(rtn_array) - startbyte) % 256) #checksum
+        rtn_array.append((sum(rtn_array) - startbyte) % 256) # checksum
         _hexDump(rtn_array)
         return rtn_array
 else:
@@ -76,7 +76,7 @@ else:
             rtn_array += chr(command_byte)
         if data is not None:
             rtn_array += data
-        rtn_array += chr((sum(bytearray(rtn_array)) - startbyte) % 256) #checksum
+        rtn_array += chr((sum(bytearray(rtn_array)) - startbyte) % 256) # checksum
         _hexDump(rtn_array)
         return rtn_array
 
@@ -140,22 +140,25 @@ def _generateProtocolHeader(success_failure=False,
         byte += 0x40
         struct_str += 'B'
         idx_list.append(6)
-    # _print("struct_str={0}".format(struct_str))
     return (byte, struct.Struct(struct_str), idx_list)
 
 
-def _generateSensorClass(sensor_inst, serial_port):
+def _generateSensorClass(sensor_inst, serial_port, allowed_device_types):
     sensor_inst.compatibility = checkSoftwareVersionFromPort(serial_port)
     sensor_inst.port_name = serial_port.name
     sensor_inst.serial_port_settings = serial_port.getSettingsDict()
     sensor_inst.serial_port = serial_port
+    
     hardware_version = convertString(sensor_inst.f7WriteRead('getHardwareVersionString'))
-    dev_type = hardware_version[4:7]
-    if dev_type[-1] == " ":
-        dev_type = dev_type[:-1]
-    if sensor_inst.device_type != dev_type:
-        raise Exception("This is a %s device, not a %s device!" % (dev_type, sensor_inst.device_type))
+    dev_type = hardware_version[4:-8].strip()
+    if dev_type not in allowed_device_types:
+        raise Exception("This is a %s device, not one of these devices %s!" % (dev_type, allowed_device_types))
+    
+    sensor_inst.device_type = dev_type
+    
     serial_number = sensor_inst.f7WriteRead('getSerialNumber')
+    sensor_inst.serial_number = serial_number
+    
     if dev_type == "DNG":
         if serial_number in global_donglist:
             rtn_inst = global_donglist[serial_number]
@@ -165,7 +168,7 @@ def _generateSensorClass(sensor_inst, serial_port):
             rtn_inst.serial_port_settings = serial_port.getSettingsDict()
             rtn_inst.serial_port = serial_port
             return rtn_inst
-        sensor_inst.serial_number = serial_number
+        
         global_donglist[serial_number] = sensor_inst
     else:
         if serial_number in global_sensorlist:
@@ -175,19 +178,21 @@ def _generateSensorClass(sensor_inst, serial_port):
             rtn_inst.port_name = serial_port.name
             rtn_inst.serial_port_settings = serial_port.getSettingsDict()
             rtn_inst.serial_port = serial_port
-            if dev_type == "BT":
+            if "BT" in dev_type:
                 rtn_inst.serial_port.timeout = 1.5
                 rtn_inst.serial_port.writeTimeout = 1.5
-            if dev_type == "WL":
+            if "WL" in dev_type:
                 rtn_inst.switchToWiredMode()
             return rtn_inst
-        sensor_inst.serial_number = serial_number
+        
+        if "BT" in dev_type:
+            sensor_inst.serial_port.timeout = 1.5
+            sensor_inst.serial_port.writeTimeout = 1.5
+        elif "WL" in dev_type:
+            sensor_inst.switchToWiredMode()
+        
         global_sensorlist[serial_number] = sensor_inst
-    if dev_type == "BT":
-        sensor_inst.serial_port.timeout = 1.5
-        sensor_inst.serial_port.writeTimeout = 1.5
-    if dev_type == "WL":
-        sensor_inst.switchToWiredMode()
+    
     return sensor_inst
 
 
@@ -242,6 +247,15 @@ def generateAxisDirections(axis_order, neg_x=False, neg_y=False, neg_z=False):
     return axis_byte
 
 
+def getSystemWirelessRetries():
+    return _wireless_retries
+
+
+def setSystemWirelessRetries(retries):
+    global _wireless_retries
+    _wireless_retries = retries
+
+
 def getDefaultCreateDeviceBaudRate():
     return _baudrate
 
@@ -274,9 +288,9 @@ def padProtocolHeader87(header_data):
 ### Classes ###
 class Broadcaster(object):
     def __init__(self):
-        self.retries = 20
+        self.retries = 10
     
-    def setRetries(self, retries=20):
+    def setRetries(self, retries=10):
         self.retries = retries
     
     def sequentialWriteRead(self, command, input_list=None, filter=None):
@@ -286,15 +300,15 @@ class Broadcaster(object):
         for i in range(self.retries):
             for sensor in reversed(filter):
                 packet = sensor.writeRead(command, input_list)
-                if packet[0]: #fail_byte
+                if packet[0]: # fail_byte
                     continue
                 val_list[sensor.serial_number] = packet
                 filter.remove(sensor)
             if not filter:
                 break
-            _print("##Attempt: {0} complete".format(i))
+            # _print("##Attempt: {0} complete".format(i))
         else:
-            _print("sensor failed to succeed")
+            # _print("sensor failed to succeed")
             for sensor in filter:
                 val_list[sensor.serial_number] = (True, None, None)
         return val_list
@@ -308,22 +322,22 @@ class Broadcaster(object):
         return q.proccessQueue()
     
     def _broadcastMethod(self, filter, method, default=None, *args):
+        # _print(filter)
         if filter is None:
             filter = list(global_sensorlist.values())
         val_list = {}
         for i in range(self.retries):
             for sensor in reversed(filter):
                 packet = getattr(sensor, method)(*args)
-                # packet = sensor.writeRead(command, input_list)
-                if packet is default: #fail_byte
+                if packet is default: # fail_byte
                     continue
                 val_list[sensor.serial_number] = packet
                 filter.remove(sensor)
             if not filter:
                 break
-            _print("##Attempt: {0} complete".format(i))
+            # _print("##Attempt: {0} complete".format(i))
         else:
-            _print("sensor failed to succeed")
+            # _print("sensor failed to succeed")
             for sensor in filter:
                 val_list[sensor.serial_number] = default
         return val_list
@@ -377,11 +391,12 @@ class Broadcaster(object):
                         callback_func(sensor, True)
                     success = True
                     break
-                _print("##Attempt: {0} complete".format(i))
+                # _print("##Attempt: {0} complete".format(i))
                 if callback_func is not None:
                     callback_func(sensor, False)
             else:
-                _print("sensor failed to succeed")
+                # _print("sensor failed to succeed")
+                pass
             val_list[sensor] = success
             filter.remove(sensor)
             delay += delay_offset
@@ -414,8 +429,6 @@ class TSCommandQueue(object):
         self.return_dict = {}
     
     def queueWriteRead(self, sensor, rtn_key, retries, command, input_list=None):
-        # qThread = sensor.queueWriteRead(self.return_dict, rtn_key , command, input_list)
-        # self.queue.append(qThread)
         self.queue.append(("queueWriteRead", sensor, (self.return_dict, rtn_key, retries, command, input_list)))
     
     def queueMethod(self, method_obj, rtn_key, retries, default=None, input_list=None, callback_func=None):
@@ -425,10 +438,9 @@ class TSCommandQueue(object):
         try:
             for i in range(retries):
                 packet = method_obj(*input_list)
-                if packet is default: #fail_byte
+                if packet is default: # fail_byte
                     if callback_func is not None:
                         callback_func(rtn_key, False)
-                    _print("##Attempt: {0} complete".format(i))
                     continue
                 if callback_func is not None:
                     callback_func(rtn_key, True)
@@ -436,11 +448,10 @@ class TSCommandQueue(object):
                 break
                
             else:
-                _print("sensor failed to succeed")
                 self.return_dict[rtn_key] = default
         except(KeyboardInterrupt):
             print('\n! Received keyboard interrupt, quitting threads.\n')
-            raise KeyboardInterrupt #fix bug where a thread eats the interupt
+            raise KeyboardInterrupt # fix bug where a thread eats the interupt
     
     def createThreads(self):
         thread_queue = []
@@ -494,10 +505,10 @@ class _TSBase(object):
         self.timestamp_mode = timestamp_mode
         self.baudrate = baudrate
         reinit = False
-        try: #if this is set the class had been there before
+        try: # if this is set the class had been there before
             check = self.stream_parse
             reinit = True
-            _print("sensor reinit!!!")
+            # _print("sensor reinit!!!")
         except:
             self._setupBaseVariables()
         self._setupProtocolHeader(**self.protocol_args)
@@ -563,11 +574,10 @@ class _TSBase(object):
             self.serial_port = None
         self.read_thread.join()
     
-    def reconnect(self): #TODO
+    def reconnect(self):
         self.close()
         if not tryPort(self.port_name):
             _print("tryport fail")
-            # return False
         try:
             serial_port = serial.Serial(self.port_name, baudrate=self.baudrate, timeout=0.5, writeTimeout=0.5)
             serial_port.applySettingsDict(self.serial_port_settings)
@@ -583,7 +593,7 @@ class _TSBase(object):
             self.setStreamingSlots(*self.stream_slot_cmds)
         return True
     
-    #Wired Old Protocol WriteRead
+    # Wired Old Protocol WriteRead
     def f7WriteRead(self, command, input_list=None):
         command_args = self.command_dict[command]
         cmd_byte, out_len, out_struct, in_len, in_struct, compatibility = command_args
@@ -602,8 +612,8 @@ class _TSBase(object):
                 return rtn_list
             return rtn_list[0]
     
-    #requires the dataloop, do not call
-    #Wired New Protocol WriteRead
+    # requires the dataloop, do not call
+    # Wired New Protocol WriteRead
     def f9WriteRead(self, command, input_list=None):
         global global_counter
         command_args = self.command_dict[command]
@@ -621,25 +631,51 @@ class _TSBase(object):
         uid = global_counter
         global_counter += 1
         try:
-            self.serial_port.write(write_array) #release in reader thread
-            self.read_queue.append((uid, cmd_byte))
-            self.read_lock.wait(1)
-        except:
-            _hexDump(write_array)
-            _print("failed to write to port")
-        self.read_lock.release()
-        read_data = self.read_dict.get(uid, None)
-        if read_data is None:
-            _print("Operation timed out!!!!")
-            # raise Exception
+            self.serial_port.write(write_array) # release in reader thread
+        except serial.SerialTimeoutException:
+            self.read_lock.release()
+            self.serial_port.close()
+            # _print("SerialTimeoutException!!!!")
+            # !!!!!Reconnect
             return (True, None, None)
+        except ValueError:
+            try:
+                # _print("trying to open it back up!!!!")
+                self.serial_port.open()
+                # _print("aaand open!!!!")
+            except serial.SerialException:
+                self.read_lock.release()
+            # _print("SerialTimeoutException!!!!")
+            # !!!!!Reconnect
+            return (True, None, None)
+        queue_packet = (uid, cmd_byte)
+        timeout_time = 0.5 + (len(self.read_queue) * 0.150) # timeout increases as queue gets larger
+        self.read_queue.append(queue_packet)
+        start_time = time.clock() + timeout_time
+        read_data = None
+        while(timeout_time > 0):
+            self.read_lock.wait(timeout_time)
+            read_data = self.read_dict.get(uid, None)
+            
+            if read_data is not None:
+                break
+            timeout_time =start_time -time.clock()
+            # _print("Still waiting {0} {1} {2}".format(uid, command, timeout_time))
+        else:
+            # _print("Operation timed out!!!!")
+            try:
+                self.read_queue.remove(queue_packet)
+            except:
+                traceback.print_exc()
+            self.read_lock.release()
+            return (True, None, None)
+        self.read_lock.release()
         del self.read_dict[uid]
         header_list, output_data = read_data
         fail_byte, timestamp, cmd_echo, ck_sum, rtn_log_id, sn, data_size = header_list
         if cmd_echo != cmd_byte:
-            _print("!!!!!!!!cmd_echo!=cmd_byte!!!!!")
-            _print('cmd_echo= 0x{0:02x} cmd_byte= 0x{1:02x}'.format(cmd_echo, cmd_byte))
-            # raise Exception
+            # _print("!!!!!!!!cmd_echo!=cmd_byte!!!!!")
+            # _print('cmd_echo= 0x{0:02x} cmd_byte= 0x{1:02x}'.format(cmd_echo, cmd_byte))
             return (True, timestamp, None)
         rtn_list = None
         if not fail_byte:
@@ -648,7 +684,8 @@ class _TSBase(object):
                 if len(rtn_list) == 1:
                     rtn_list = rtn_list[0]
         else:
-            _print("fail_byte!!!!triggered")
+            # _print("fail_byte!!!!triggered")
+            pass
         return (fail_byte, timestamp, rtn_list)
     
     writeRead = f9WriteRead
@@ -662,7 +699,7 @@ class _TSBase(object):
             pass
         return False
     
-##generated functions USB and WL_ and DNG and EM_ and DL_ and BT_
+## generated functions USB and WL_ and DNG and EM_ and DL_ and BT_
     ##  85(0x55)
     def stopStreaming(self):
         fail_byte, t_stamp, data = self.writeRead('stopStreaming')
@@ -752,7 +789,7 @@ class _TSBase(object):
         if timestamp:
             return (data, t_stamp)
         return data
-##END generated functions USB and WL_ and DNG and EM_ and DL_ and BT_
+## END generated functions USB and WL_ and DNG and EM_ and DL_ and BT_
 
 
 class _TSSensor(_TSBase):
@@ -873,19 +910,17 @@ class _TSSensor(_TSBase):
         'getMouseAbsoluteRelativeMode': (0xfc, 1, '>B', 0, None, 1)
     })
     
-    reverse_command_dict = dict(
-                map(lambda x: [x[1][0], x[0]], command_dict.items())
-            )
+    reverse_command_dict = dict(map(lambda x: [x[1][0], x[0]], command_dict.items()))
     
+    _device_types = ["!BASE"]
     def __new__(cls, com_port=None, baudrate=_baudrate, timestamp_mode=TSS_TIMESTAMP_SENSOR):
-        device_type = "!BASE"
         if com_port:
             if type(com_port) is str:
                 port_name = com_port
             elif type(com_port) is ComInfo:
                 port_name = com_port.com_port
             else:
-                _print("An erronous parameter was passed in  TODO")
+                _print("An erronous parameter was passed in")
                 return None
             if baudrate not in _allowed_baudrates:
                 baudrate = _baudrate
@@ -893,8 +928,7 @@ class _TSSensor(_TSBase):
             serial_port = serial.Serial(port_name, baudrate=baudrate, timeout=0.5, writeTimeout=0.5)
             if serial_port is not None:
                 new_inst = super(_TSSensor, cls).__new__(cls)
-                new_inst.device_type = device_type
-                return _generateSensorClass(new_inst, serial_port)
+                return _generateSensorClass(new_inst, serial_port, _TSSensor._device_types)
         _print('Error serial port was not made')
     
     def __init__(self, com_port=None, baudrate=_baudrate, timestamp_mode=TSS_TIMESTAMP_SENSOR):
@@ -907,10 +941,10 @@ class _TSSensor(_TSBase):
         self.timestamp_mode = timestamp_mode
         self.baudrate = baudrate
         reinit = False
-        try: #if this is set the class had been there before
+        try: # if this is set the class had been there before
             check = self.stream_parse
             reinit = True
-            _print("sensor reinit!!!")
+            # _print("sensor reinit!!!")
         except:
             self._setupBaseVariables()
             self.callback_func = None
@@ -929,17 +963,17 @@ class _TSSensor(_TSBase):
             for i in range(retries):
                 packet = self.writeRead(command, input_list)
                 if packet[0]:
-                    _print("##Attempt: {0} complete".format(i))
+                    # _print("##Attempt: {0} complete".format(i))
                     time.sleep(0.1)
                     continue
                 rtn_dict[rtn_key] = packet
                 break
             else:
-                _print("sensor failed to succeed")
+                # _print("sensor failed to succeed")
                 rtn_dict[rtn_key] = (True, None, None)
         except(KeyboardInterrupt):
             print('\n! Received keyboard interrupt, quitting threads.\n')
-            raise KeyboardInterrupt #fix bug where a thread eats the interupt
+            raise KeyboardInterrupt # fix bug where a thread eats the interupt
     
     def queueWriteRead(self, rtn_dict, rtn_key, retries, command, input_list=None):
         return threading.Thread(target=self._queueWriteRead, args=(rtn_dict, rtn_key, retries, command, input_list))
@@ -947,19 +981,16 @@ class _TSSensor(_TSBase):
     def _generateStreamParse(self):
         stream_string = '>'
         if self.stream_slot_cmds is None:
-            self.getAsyncSlots()
+            self.getStreamingSlots()
         for slot_cmd in self.stream_slot_cmds:
             if slot_cmd is not 'null':
                 out_struct = self.command_dict[slot_cmd][2]
-                stream_string += out_struct[1:] #stripping the >
+                stream_string += out_struct[1:] # stripping the >
         self.stream_parse = struct.Struct(stream_string)
-        # print("||||stream_parse={0}".format(self.stream_parse.format))
-        # print("||||asyncOutputParseSize={0}".format(self.stream_parse.size))
+        # Set streaming batch command
+        self.command_dict['_getStreamingBatch'] = (0x54, self.stream_parse.size, stream_string, 0, None, 1)
     
     def _parseStreamData(self, protocol_data, output_data):
-        if output_data is '': #remove TODO
-            _print("Empty stream packet found!!")#remove TODO
-            return#remove TODO
         rtn_list = self.stream_parse.unpack(output_data)
         if len(rtn_list) == 1:
             rtn_list = rtn_list[0]
@@ -981,11 +1012,11 @@ class _TSSensor(_TSBase):
                 self._readDataWiredProHeader()
             except(KeyboardInterrupt):
                 print('\n! Received keyboard interrupt, quitting threads.\n')
-                raise KeyboardInterrupt #fix bug where a thread eats the interupt
+                raise KeyboardInterrupt # fix bug where a thread eats the interupt
             except:
-                traceback.print_exc()
-                _print("bad readAsyncData parse")
-                _print('!!!!!inWaiting = {0}'.format(self.serial_port.inWaiting()))
+                # traceback.print_exc()
+                # _print("bad _parseStreamData parse")
+                # _print('!!!!!inWaiting = {0}'.format(self.serial_port.inWaiting()))
                 self._read_data = None
                 try:
                     self.read_lock.release()
@@ -994,54 +1025,44 @@ class _TSSensor(_TSBase):
     
     def _readDataWiredProHeader(self):
         _serial_port = self.serial_port
-        in_wait  = _serial_port.inWaiting()
-        if in_wait:
-            _print('!666! inWaiting = {0}'.format(in_wait))
+        # in_wait  = _serial_port.inWaiting()
+        # if in_wait:
+            # _print('!666! inWaiting = {0}'.format(in_wait))
         header_bytes = _serial_port.read(self.header_parse.size)
         if header_bytes:
-            # _hexDump(header_bytes, 'o')
             if self.timestamp_mode == TSS_TIMESTAMP_SENSOR:
                 header_data = self.header_parse.unpack(header_bytes)
-                header_list = padProtocolHeader71(header_data) #todo make func from _generateProtocolHeader
+                header_list = padProtocolHeader71(header_data)
             elif self.timestamp_mode == TSS_TIMESTAMP_SYSTEM:
-                sys_timestamp = time.clock() #time packet was parsed it might been in the system buffer a few ms
+                sys_timestamp = time.clock() # time packet was parsed it might been in the system buffer a few ms
                 sys_timestamp *= 1000000
                 header_data = self.header_parse.unpack(header_bytes)
-                header_list = padProtocolHeader69(header_data, sys_timestamp) #todo make func from _generateProtocolHeader
+                header_list = padProtocolHeader69(header_data, sys_timestamp)
             else:
                 header_data = self.header_parse.unpack(header_bytes)
-                header_list = padProtocolHeader69(header_data, None) #todo make func from _generateProtocolHeader
+                header_list = padProtocolHeader69(header_data, None)
             fail_byte, timestamp, cmd_echo, ck_sum, rtn_log_id, sn, data_size = header_list
-            # print("!!!!fail_byte={0}, cmd_echo={1}, rtn_log_id={2}, data_size={3}".format(fail_byte, cmd_echo, rtn_log_id, data_size))
-            if fail_byte and data_size != 0: #!!!!!remove
-                _print("normal command={0}".format(header_list)) #!!!!!remove
-                _hexDump(header_bytes, '!o') #!!!!!remove
-                output_data = None #!!!!!remove
-            else:#!!!!!remove 
-                output_data = _serial_port.read(data_size)
-                # _hexDump(header_bytes, 'o')
-                # _hexDump(output_data, 'o')
+            output_data = _serial_port.read(data_size)
             if cmd_echo is 0xff:
                 if data_size:
                     self._parseStreamData(timestamp, output_data)
                 return
             self.read_lock.acquire()
-            # print('retrning data!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!')
-            if len(self.read_queue): #here for a bug in the code
+            if len(self.read_queue): # here for a bug in the code
                 uid, cmd_byte = self.read_queue.popleft()
                 if cmd_byte == cmd_echo:
                     self.read_dict[uid] = (header_list, output_data)
-                    self.read_lock.notify() #dies in 3 seconds if there is a writeRead in wait
+                    self.read_lock.notify() # dies in 3 seconds if there is a writeRead in wait
                 else:
-                    _print('Unrequested packet found!!!')
-                    _hexDump(header_bytes, 'o')
-                    _hexDump(output_data, 'o')
+                    # _print('Unrequested packet found!!!')
+                    # _hexDump(header_bytes, 'o')
+                    # _hexDump(output_data, 'o')
                     self.read_queue.appendleft((uid, cmd_byte)) 
                 self.read_lock.release()
                 return
-            _print('Unrequested packet found!!!')
-            _hexDump(header_bytes, 'o')
-            _hexDump(output_data, 'o')
+            # _print('Unrequested packet found!!!')
+            # _hexDump(header_bytes, 'o')
+            # _hexDump(output_data, 'o')
             self.read_lock.release()
     
     def getLatestStreamData(self, timeout):
@@ -1067,38 +1088,39 @@ class _TSSensor(_TSBase):
     # Convenience functions to replace commands 244(0xf4) and 245(0xf5)
     def setGlobalAxis(self, hid_type, config_axis, local_axis, global_axis, deadzone, scale, power):
         """ Sets an axis of the desired emulated input device as a 'Global Axis'
-            style axis. Axis operating under this style use a reference vector and a
-            consitent local vector to determine the state of the device's axis. As
-            the local vector rotates, it is projected onto the global vector. Once
-            the distance of that projection on the global vector exceeds the
-            inputted "deadzone", the device will begin tranmitting non-zero values
-            for the device's desired axis.
+            style axis. Axis operating under this style use a reference vector
+            and a consitent local vector to determine the state of the device's
+            axis. As the local vector rotates, it is projected onto the global
+            vector. Once the distance of that projection on the global vector
+            exceeds the inputted "deadzone", the device will begin tranmitting
+            non-zero values for the device's desired axis.
             
             @param hid_type: An integer whose value defines whether the device
                 in question is a TSS_JOYSTICK or TSS_MOUSE.
             
-            @param config_axis: A string whose value may be either 'X' or 'Y' for a
-            mouse or 'X', 'Y', or 'Z' for a joystick. This string defines what axis
-            of the device is to be configured.
+            @param config_axis: A string whose value may be either 'X' or 'Y'
+                for a mouse or 'X', 'Y', or 'Z' for a joystick. This string
+                defines what axis of the device is to be configured.
             
             @param local_axis: A list of 3 Floats whose value is a normalized
-            Vector3. This vector represents the sensor's local vector to track.
+                Vector3. This vector represents the sensor's local vector to
+                track.
             
             @param global_axis: A list of 3 Floats whose value is a normalized
-            Vector3. This vector represents the global vector to project the local
-            vector onto (should be orthoginal to the local vector).
+                Vector3. This vector represents the global vector to project the
+                local vector onto (should be orthoginal to the local vector).
             
-            @param deadzone: A float that defines the minimum distance necessary for
-            the device's axis to read a non-zero value.
+            @param deadzone: A float that defines the minimum distance necessary
+                for the device's axis to read a non-zero value.
             
-            @param scale: A float that defines the linear scale for the values being
-            returned for the axis.
+            @param scale: A float that defines the linear scale for the values
+                being returned for the axis.
             
-            @param power: A float whose value is an exponental power used to further
-            modify data being returned from the sensor.
+            @param power: A float whose value is an exponental power used to
+                further modify data being returned from the sensor.
             
             @return: True if the command was successfuly written to the device.
-            False if the command was not written.
+                False if the command was not written.
         """
         # Set class
         if hid_type != TSS_JOYSTICK and hid_type != TSS_MOUSE:
@@ -1132,42 +1154,45 @@ class _TSSensor(_TSBase):
     
     def setScreenPointAxis(self, hid_type, config_axis, dist_from_screen, dist_on_axis, collision_component, sensor_dir, button_halt):
         """ Sets an axis of the desired emulated input device as a 'Screen Point
-            Axis' style axis. An axis operating under this style projects a vector
-            along the sensor's direction vector into a mathmatical plane. The
-            collision point on the plane is then used to determine what the device's
-            axis's current value is. The direction vector is rotated based on the
-            orientation of the sensor.
+            Axis' style axis. An axis operating under this style projects a
+            vector along the sensor's direction vector into a mathmatical plane.
+            The collision point on the plane is then used to determine what the
+            device's axis's current value is. The direction vector is rotated
+            based on the orientation of the sensor.
             
             @param hid_type: An integer whose value defines whether the device
                 in question is a TSS_JOYSTICK or TSS_MOUSE.
             
-            @param config_axis: A string whose value may be either 'X' or 'Y' for a
-            mouse or 'X', 'Y', or 'Z' for a joystick. This string defines what axis
-            of the device is to be configured.
+            @param config_axis: A string whose value may be either 'X' or 'Y'
+                for a mouse or 'X', 'Y', or 'Z' for a joystick. This string
+                defines what axis of the device is to be configured.
             
-            @param dist_from_screen: A float whose value is the real world distance
-            the sensor is from the user's screen. Must be the same units as
-            dist_on_axis.
+            @param dist_from_screen: A float whose value is the real world
+                distance the sensor is from the user's screen. Must be the same
+                units as dist_on_axis.
             
-            @param dist_on_axis: A float whose value is the real world length of the
-            axis along the user's screen (width of screen for x-axis, height of
-            screen for y-axis). Must be the same units as dist_from_screen.
+            @param dist_on_axis: A float whose value is the real world length of
+                the axis along the user's screen (width of screen for x-axis,
+                height of screen for y-axis). Must be the same units as
+                dist_from_screen.
             
             @param collision_component: A string whose value may be 'X', 'Y', or
-            'Z'. This string defines what component of the look vector's collision
-            point on the virtual plane to use for manipulating the device's axis.
+                'Z'. This string defines what component of the look vector's
+                collision point on the virtual plane to use for manipulating the
+                device's axis.
             
-            @param sensor_dir: A string whose value may be 'X', 'Y', or 'Z'. This
-            string defines which of the sensor's local axis to use for creating the
-            vector to collide with the virtual plane.
+            @param sensor_dir: A string whose value may be 'X', 'Y', or 'Z'.
+                This string defines which of the sensor's local axis to use for
+                creating the vector to collide with the virtual plane.
             
-            @param button_halt: A float whose value is a pause time in milliseconds.
-            When a button is pressed on the emulated device, transmission of changes
-            to the axis is paused for the inputted amount of time to prevent
-            undesired motion detection when pressing buttons.
+            @param button_halt: A float whose value is a pause time in
+                milliseconds. When a button is pressed on the emulated device,
+                transmission of changes to the axis is paused for the inputted
+                amount of time to prevent undesired motion detection when
+                pressing buttons.
             
             @return: True if the command was successfuly written to the device.
-            False if the command was not written.
+                False if the command was not written.
         """
         # Set class
         if hid_type != TSS_JOYSTICK and hid_type != TSS_MOUSE:
@@ -1227,12 +1252,12 @@ class _TSSensor(_TSBase):
             @param hid_type: An integer whose value defines whether the device
                 in question is a TSS_JOYSTICK or TSS_MOUSE.
             
-            @param config_axis: A string whose value may be either 'X' or 'Y' for a
-            mouse or 'X', 'Y', or 'Z' for a joystick. This string defines what axis
-            of the device is to be configured.
+            @param config_axis: A string whose value may be either 'X' or 'Y'
+                for a mouse or 'X', 'Y', or 'Z' for a joystick. This string
+                defines what axis of the device is to be configured.
                     
             @return: True if the command was successfuly written to the device.
-            False if the command was not written.
+                False if the command was not written.
         """
         # Set class
         if hid_type != TSS_JOYSTICK and hid_type != TSS_MOUSE:
@@ -1261,14 +1286,15 @@ class _TSSensor(_TSBase):
             @param hid_type: An integer whose value defines whether the device
                 in question is a TSS_JOYSTICK or TSS_MOUSE.
             
-            @param button_idx: An integer whose value defines which button on the emulated device to configure.
-            Default range is 0 through 7.
+            @param button_idx: An integer whose value defines which button on
+                the emulated device to configure. Default range is 0 through 7.
             
-            @param button_bind: An integer whose value defines which physical button
-            to bind to the emulated device's button to as defined by button_idx, either TSS_BUTTON_LEFT or TSS_BUTTON_RIGHT.
+            @param button_bind: An integer whose value defines which physical
+                button to bind to the emulated device's button to as defined by
+                button_idx, either TSS_BUTTON_LEFT or TSS_BUTTON_RIGHT.
             
             @return: True if the command was successfuly written to the device.
-            False if the command was not written.
+                False if the command was not written.
         """
         # Set class
         if hid_type != TSS_JOYSTICK and hid_type != TSS_MOUSE:
@@ -1296,24 +1322,24 @@ class _TSSensor(_TSBase):
             @param hid_type: An integer whose value defines whether the device
                 in question is a TSS_JOYSTICK or TSS_MOUSE.
             
-            @param button_idx: An integer whose value defines which button on the emulated device to configure.
-            Default range is 0 through 7.
+            @param button_idx: An integer whose value defines which button on
+                the emulated device to configure. Default range is 0 through 7.
             
             @param local_axis: A list of 3 floats whose value represents a
-            normalized Vector3. This vector represents the sensor's local vector to
-            track.
+                normalized Vector3. This vector represents the sensor's local
+                vector to track.
             
             @param global_axis: A list of 3 floats whose value is a normalized
-            Vector3. This vector represents the global vector to move the local
-            vector towards for "pressing" (should not be colinear to the local
-            vector).
+                Vector3. This vector represents the global vector to move the
+                local vector towards for "pressing" (should not be colinear to
+                the local vector).
             
             @param max_dist: A float whose value defines how close the local
-            vector's orientation must be to the global vector for the button to be
-            'pressed'.
+                vector's orientation must be to the global vector for the button
+                to be 'pressed'.
             
             @return: True if the command was successfuly written to the device.
-            False if the command was not written.
+                False if the command was not written.
         """
         # Set class
         if hid_type != TSS_JOYSTICK and hid_type != TSS_MOUSE:
@@ -1341,14 +1367,15 @@ class _TSSensor(_TSBase):
             @param hid_type: An integer whose value defines whether the device
                 in question is a TSS_JOYSTICK or TSS_MOUSE.
             
-            @param button_idx: An integer whose value defines which button on the emulated device to configure.
-            Default range is 0 through 7.
+            @param button_idx: An integer whose value defines which button on
+                the emulated device to configure. Default range is 0 through 7.
             
-            @param threshold: A float whose value defines how many Gs of force must
-            be experienced by the sensor before the button is 'pressed'.
+            @param threshold: A float whose value defines how many Gs of force
+                must be experienced by the sensor before the button is
+                'pressed'.
             
             @return: True if the command was successfuly written to the device.
-            False if the command was not written.
+                False if the command was not written.
         """
         # Set class
         if hid_type != TSS_JOYSTICK and hid_type != TSS_MOUSE:
@@ -1375,11 +1402,11 @@ class _TSSensor(_TSBase):
             @param hid_type: An integer whose value defines whether the device
                 in question is a TSS_JOYSTICK or TSS_MOUSE.
             
-            @param button_idx: An integer whose value defines which button on the emulated device to configure.
-            Default range is 0 through 7.
+            @param button_idx: An integer whose value defines which button on
+                the emulated device to configure. Default range is 0 through 7.
             
             @return: True if the command was successfuly written to the device.
-            False if the command was not written.
+                False if the command was not written.
         """
         # Set class
         if hid_type != TSS_JOYSTICK and hid_type != TSS_MOUSE:
@@ -1393,26 +1420,27 @@ class _TSSensor(_TSBase):
     # Convenience functions for setting up simple mouse/joystick implimentations
     def setupSimpleMouse(self, diagonal_size, dist_from_screen, aspect_ratio, is_relative=True):
         """ Creates a simple emulated mouse device using the features of the
-            sensor. Left button and right button emulate the mouse's left and right
-            buttons respectivly and using the sensor as a pointing device with the
-            front of the device facing towards the screen will move the mouse
-            cursor.
+            sensor. Left button and right button emulate the mouse's left and
+            right buttons respectivly and using the sensor as a pointing device
+            with the front of the device facing towards the screen will move the
+            mouse cursor.
             
-            @param diagonal_size: A float whose value is the real world diagonal size of
-            the user's screen.
+            @param diagonal_size: A float whose value is the real world diagonal
+                size of the user's screen.
             
-            @param dist_from_screen: A float whose value is the real world distance
-            the sensor is from the user's screen. Must be the same units as
-            diagonal_size.
+            @param dist_from_screen: A float whose value is the real world
+                distance the sensor is from the user's screen. Must be the same
+                units as diagonal_size.
             
-            @param aspect_ratio: A float whose value is the real world aspect ratio
-            of the user's screen.
+            @param aspect_ratio: A float whose value is the real world aspect
+                ratio of the user's screen.
             
-            @param is_relative: A boolean whose value expresses whether the mouse is
-            to operate in relative mode (True) or absolute mode (False).
+            @param is_relative: A boolean whose value expresses whether the
+                mouse is to operate in relative mode (True) or absolute mode
+                (False).
             
             @return: True if the command was successfuly written to the device.
-            False if the command was not written.
+                False if the command was not written.
         """
         cur_mouse_rel = self.getMouseAbsoluteRelativeMode()
         if cur_mouse_rel != is_relative:
@@ -1446,30 +1474,31 @@ class _TSSensor(_TSBase):
     
     def setupSimpleJoystick(self, deadzone, scale, power, shake_threshold, max_dist):
         """ Creates a simple emulated joystick device using the features of the
-            sensor. The left and right physical buttons on the sensor act as buttons
-            0 and 1 for the joystick. Button 2 is a shake button. Buttons 3 and 4
-            are pressed when the sensor is rotated +-90 degrees on the Z-axis.
-            Rotations on the sensor's Y and X axis correspond to movements on the
-            joystick's X and Y axis.
+            sensor. The left and right physical buttons on the sensor act as
+            buttons 0 and 1 for the joystick. Button 2 is a shake button.
+            Buttons 3 and 4 are pressed when the sensor is rotated +-90 degrees
+            on the Z-axis. Rotations on the sensor's Y and X axis correspond to
+            movements on the joystick's X and Y axis.
             
-            @param deadzone: A float that defines the minimum distance necessary for
-            the device's axis to read a non-zero value.
+            @param deadzone: A float that defines the minimum distance necessary
+                for the device's axis to read a non-zero value.
             
-            @param scale: A float that defines the linear scale for the values being
-            returned for the axis.
+            @param scale: A float that defines the linear scale for the values
+                being returned for the axis.
             
-            @param power:A float whose value is an exponental power used to further
-            modify data being returned from the sensor.
+            @param power:A float whose value is an exponental power used to
+                further modify data being returned from the sensor.
             
-            @param shake_threshold: A float whose value defines how many Gs of force
-            must be experienced by the sensor before the button 2 is 'pressed'.
+            @param shake_threshold: A float whose value defines how many Gs of
+                force must be experienced by the sensor before the button 2 is
+                'pressed'.
             
             @param max_dist: A float whose value defines how close the local
-            vector's orientation must  be to the global vector for buttons 3 and 4
-            are "pressed".
+                vector's orientation must  be to the global vector for buttons 3
+                and 4 are "pressed".
             
             @return: True if the command was successfuly written to the device.
-            False if the command was not written.
+                False if the command was not written.
         """
         self.setGlobalAxis(TSS_JOYSTICK, "X", [1, 0, 0], [0, 0, -1], deadzone, scale, power)
         self.setGlobalAxis(TSS_JOYSTICK, "Y", [0, 1, 0], [0, 0, -1], deadzone, scale, power)
@@ -1485,26 +1514,28 @@ class _TSSensor(_TSBase):
     # LightGun Functions
     def setupSimpleLightgun(self, diagonal_size, dist_from_screen, aspect_ratio, is_relative=True):
         """ Creates a simple emulated mouse based lightgun device using the
-            features of the sensor. Left button of the sensor emulates the mouse's
-            left button. Shaking the sensor emulates the mouse's right button.
-            This configuration uses the sensor as a pointing device with the front
-            of the device facing forward the screen will move the mouse cursor.
+            features of the sensor. Left button of the sensor emulates the
+            mouse's left button. Shaking the sensor emulates the mouse's right
+            button. This configuration uses the sensor as a pointing device with
+            the front of the device facing forward the screen will move the
+            mouse cursor.
             
-            @param diagonal_size: A float whose value is the real world diagonal size of
-            the user's screen.
+            @param diagonal_size: A float whose value is the real world diagonal
+                size of the user's screen.
             
-            @param dist_from_screen: A float whose value is the real world distance
-            the sensor is from the user's screen. Must be the same units as
-            diagonal_size.
+            @param dist_from_screen: A float whose value is the real world
+                distance the sensor is from the user's screen. Must be the same
+                units as diagonal_size.
         
-            @param aspect_ratio: A float whose value is the real world aspect ratio
-            of the user's screen.
+            @param aspect_ratio: A float whose value is the real world aspect
+                ratio of the user's screen.
             
-            @param is_relative: A boolean whose value expresses whether the mouse is
-            to operate in relative mode (True) or absolute mode (False).
+            @param is_relative: A boolean whose value expresses whether the
+                mouse is to operate in relative mode (True) or absolute mode
+                (False).
             
             @return: True if the command was successfuly written to the device.
-            False if the command was not written.
+                False if the command was not written.
         """
         cur_mouse_rel = self.getMouseAbsoluteRelativeMode()
         if cur_mouse_rel != is_relative:
@@ -1593,16 +1624,13 @@ class _TSSensor(_TSBase):
         return data
     
     ##  84(0x54)
-    def getStreamingBatch(self): #TODO
-        # cmd_byte = 0x54
-        # write_array= makeWriteArray(0xf7, None, cmd_byte, None)
-        # self.serial_port.write(write_array)
-        # output_data = self.serial_port.read(self.stream_parse.size)
-        # rtn_list = self.stream_parse.unpack(output_data)
-        # if len(rtn_list) != 1:
-            # return rtn_list
-        # return rtn_list[0]
-        pass
+    def getStreamingBatch(self, timestamp=False):
+        if self.stream_parse is None:
+            self._generateStreamParse()
+        fail_byte, t_stamp, data = self.writeRead('_getStreamingBatch')
+        if timestamp:
+            return (data, t_stamp)
+        return data
     
     ##  85(0x55)
     def stopStreaming(self):
@@ -1618,7 +1646,7 @@ class _TSSensor(_TSBase):
         fail_byte, timestamp, slot_bytes = self.writeRead('startStreaming')
         return not fail_byte
     
-##generated functions USB and WL_ and EM_ and DL_ and BT_
+## generated functions USB and WL_ and EM_ and DL_ and BT_
     ##   0(0x00)
     def getTaredOrientationAsQuaternion(self, timestamp=False):
         fail_byte, t_stamp, data = self.writeRead('getTaredOrientationAsQuaternion')
@@ -2393,7 +2421,7 @@ class _TSSensor(_TSBase):
         if timestamp:
             return (data, t_stamp)
         return data
-##END generated functions USB and WL_ and EM_ and DL_ and BT_
+## END generated functions USB and WL_ and EM_ and DL_ and BT_
 
 
 class TSUSBSensor(_TSSensor):
@@ -2404,12 +2432,10 @@ class TSUSBSensor(_TSSensor):
         'getButtonState': (0xfa, 1, '>B', 0, None, 1)
         })
     
-    reverse_command_dict = dict(
-                map(lambda x: [x[1][0], x[0]], command_dict.items())
-            )
+    reverse_command_dict = dict(map(lambda x: [x[1][0], x[0]], command_dict.items()))
     
+    _device_types = ["USB", "USB-HH", "MUSB", "MUSB-HH", "USBWT", "USBWT-HH"]
     def __new__(cls, com_port=None, baudrate=_baudrate, timestamp_mode=TSS_TIMESTAMP_SENSOR):
-        device_type = "USB"
         if com_port is None:
             return None
         if com_port:
@@ -2418,7 +2444,7 @@ class TSUSBSensor(_TSSensor):
             elif type(com_port) is ComInfo:
                 port_name = com_port.com_port
             else:
-                _print("An erronous parameter was passed in  TODO")
+                _print("An erronous parameter was passed in")
                 return None
             if baudrate not in _allowed_baudrates:
                 baudrate = _baudrate
@@ -2426,11 +2452,10 @@ class TSUSBSensor(_TSSensor):
             serial_port = serial.Serial(port_name, baudrate=baudrate, timeout=0.5, writeTimeout=0.5)
             if serial_port is not None:
                 new_inst = super(_TSSensor, cls).__new__(cls)
-                new_inst.device_type = device_type
                 serial_port.write(bytearray((0xf7, 0x56, 0x56)))
                 time.sleep(0.01)
                 serial_port.flushInput()
-                return _generateSensorClass(new_inst, serial_port)
+                return _generateSensorClass(new_inst, serial_port, TSUSBSensor._device_types)
         _print('Error serial port was not made')
     
     ## 231(0xe7)
@@ -2442,7 +2467,7 @@ class TSUSBSensor(_TSSensor):
             return (not fail_byte, t_stamp)
         return not fail_byte
     
-###generated functions USB
+## generated functions USB
     ## 232(0xe8)
     def getUARTBaudRate(self, timestamp=False):
         fail_byte, t_stamp, data = self.writeRead('getUARTBaudRate')
@@ -2456,7 +2481,7 @@ class TSUSBSensor(_TSSensor):
         if timestamp:
             return (data, t_stamp)
         return data
-#####END generated commands USB
+## END generated functions USB
 
 
 class TSWLSensor(_TSSensor):
@@ -2474,12 +2499,10 @@ class TSWLSensor(_TSSensor):
         'getButtonState': (0xfa, 1, '>B', 0, None, 1)
         })
     
-    reverse_command_dict = dict(
-                map(lambda x: [x[1][0], x[0]], command_dict.items())
-            )
-        
+    reverse_command_dict = dict(map(lambda x: [x[1][0], x[0]], command_dict.items()))
+    
+    _device_types = ["WL", "WL-HH"]
     def __new__(cls, com_port=None, baudrate=_baudrate, timestamp_mode=TSS_TIMESTAMP_SENSOR, logical_id=None, dongle=None):
-        device_type = "WL"
         if com_port is None and logical_id is None and dongle is None:
             return None
         if com_port:
@@ -2488,7 +2511,7 @@ class TSWLSensor(_TSSensor):
             elif type(com_port) is ComInfo:
                 port_name = com_port.com_port
             else:
-                _print("An erronous parameter was passed in  TODO")
+                _print("An erronous parameter was passed in")
                 return None
             if baudrate not in _allowed_baudrates:
                 baudrate = _baudrate
@@ -2496,16 +2519,15 @@ class TSWLSensor(_TSSensor):
             serial_port = serial.Serial(port_name, baudrate=baudrate, timeout=0.5, writeTimeout=0.5)
             if serial_port is not None:
                 new_inst = super(_TSSensor, cls).__new__(cls)
-                new_inst.device_type = device_type
                 new_inst.dongle = None
                 new_inst.logical_id = None
                 serial_port.write(bytearray((0xf7, 0x56, 0x56)))
                 time.sleep(0.01)
                 serial_port.flushInput()
-                return _generateSensorClass(new_inst, serial_port)
+                return _generateSensorClass(new_inst, serial_port, TSWLSensor._device_types)
             _print('Error serial port was not made')
         if logical_id is not None and dongle:
-            for tries in range(10):
+            for tries in range(_wireless_retries + 1):
                 fail_byte, timestamp, serial_number = dongle.faWriteRead(logical_id, 'getSerialNumber')
                 if not fail_byte:
                     if serial_number in global_sensorlist:
@@ -2515,11 +2537,19 @@ class TSWLSensor(_TSSensor):
                             pass
                         rtn_inst.dongle = dongle
                         rtn_inst.logical_id = logical_id
+                        dongle.wireless_table[logical_id] = serial_number
                         rtn_inst.switchToWirelessMode()
                         return rtn_inst
                     else:
                         new_inst = super(_TSSensor, cls).__new__(cls)
-                        new_inst.device_type = device_type
+                        for tries in range(_wireless_retries + 1):
+                            fail_byte, timestamp, hardware_version = dongle.faWriteRead(logical_id, 'getHardwareVersionString')
+                            if not fail_byte:
+                                new_inst.device_type = convertString(hardware_version)[4:-8].strip()
+                                break
+                        else:
+                            new_inst.device_type = "WL"
+                        
                         new_inst.dongle = dongle
                         new_inst.logical_id = logical_id
                         new_inst.port_name = ""
@@ -2529,9 +2559,9 @@ class TSWLSensor(_TSSensor):
                         new_inst.serial_number = serial_number
                         global_sensorlist[serial_number] = new_inst
                         return new_inst
-            _print("raise wireless fail error here TODO")
+            _print("raise wireless fail error here")
             return None
-        _print('whyamiheer')
+        _print('this sould never happen')
         return None
     
     def __init__(self, com_port=None, baudrate=_baudrate, timestamp_mode=TSS_TIMESTAMP_SENSOR, logical_id=None, dongle=None):
@@ -2544,10 +2574,10 @@ class TSWLSensor(_TSSensor):
         self.timestamp_mode = timestamp_mode
         self.baudrate = baudrate
         reinit = False
-        try: #if this is set the class had been there before
+        try: # if this is set the class had been there before
             check = self.stream_parse
             reinit = True
-            _print("sensor reinit!!!")
+            # _print("sensor reinit!!!")
         except:
             self._setupBaseVariables()
             self.callback_func = None
@@ -2564,12 +2594,11 @@ class TSWLSensor(_TSSensor):
     
     def close(self):
         if self.serial_port is not None:
-            # print("closing port")
             super(TSWLSensor, self).close()
     
     def _wirlessWriteRead(self, command, input_list=None):
         result = (True, None, None)
-        for i in range(4):
+        for i in range(_wireless_retries + 1):
             result = self.dongle.faWriteRead(self.logical_id, command, input_list)
             if not result[0]:
                 break
@@ -2627,7 +2656,7 @@ class TSWLSensor(_TSSensor):
             return (not fail_byte, t_stamp)
         return not fail_byte
     
-##### generated commands WL_
+## generated functions WL_
     ## 197(0xc5)
     def commitWirelessSettings(self, timestamp=False):
         fail_byte, t_stamp, data = self.writeRead('commitWirelessSettings')
@@ -2669,7 +2698,7 @@ class TSWLSensor(_TSSensor):
         if timestamp:
             return (data, t_stamp)
         return data
-#####END generated commands WL_
+## END generated functions WL_
 
 
 class TSDongle(_TSBase):
@@ -2710,19 +2739,15 @@ class TSDongle(_TSBase):
     
     wl_command_dict = TSWLSensor.command_dict.copy()
     
-    reverse_wl_command_dict = dict(
-                    map(lambda x: [x[1][0], x[0]], wl_command_dict.items())
-                )
-    
+    _device_types = ["DNG"]
     def __new__(cls, com_port=None, baudrate=_baudrate, timestamp_mode=TSS_TIMESTAMP_SENSOR):
-        device_type = "DNG"
         if com_port:
             if type(com_port) is str:
                 port_name = com_port
             elif type(com_port) is ComInfo:
                 port_name = com_port.com_port
             else:
-                _print("An erronous parameter was passed in  TODO")
+                _print("An erronous parameter was passed in")
                 return None
             if baudrate not in _allowed_baudrates:
                 baudrate = _baudrate
@@ -2730,7 +2755,6 @@ class TSDongle(_TSBase):
             serial_port = serial.Serial(port_name, baudrate=baudrate, timeout=0.5, writeTimeout=0.5)
             if serial_port is not None:
                 new_inst = super(TSDongle, cls).__new__(cls)
-                new_inst.device_type = device_type
                 serial_port.write(bytearray((0xf7, 0x56, 0x56)))
                 time.sleep(0.05)
                 serial_port.flushInput()
@@ -2754,7 +2778,7 @@ class TSDongle(_TSBase):
                                 serial_port.read(2)
                                 break
                     idx <<= 1
-                return _generateSensorClass(new_inst, serial_port)
+                return _generateSensorClass(new_inst, serial_port, TSDongle._device_types)
         _print('Error serial port was not made')
     
     def __init__(self, com_port=None, baudrate=_baudrate, timestamp_mode=TSS_TIMESTAMP_SENSOR):
@@ -2768,10 +2792,10 @@ class TSDongle(_TSBase):
         self.timestamp_mode = timestamp_mode
         self.baudrate = baudrate
         reinit = False
-        try: #if this is set the class had been there before
+        try: # if this is set the class had been there before
             check = self.wireless_table
             reinit = True
-            _print("sensor reinit!!!")
+            # _print("sensor reinit!!!")
         except:
             self._setupBaseVariables()
         self._setupProtocolHeader(**self.protocol_args)
@@ -2783,7 +2807,6 @@ class TSDongle(_TSBase):
         self.close()
         if not tryPort(self.port_name):
             _print("tryport fail")
-            # return False
         try:
             serial_port = serial.Serial(self.port_name, baudrate=self.baudrate, timeout=0.5, writeTimeout=0.5)
             serial_port.applySettingsDict(self.serial_port_settings)
@@ -2855,7 +2878,7 @@ class TSDongle(_TSBase):
             print("!!!!!fail d_header={0}, dwl_header={1}, protocol_header_byte={2}".format(d_header, dwl_header, protocol_byte))
             raise Exception
     
-    #Wireless Old Protocol WriteRead
+    # Wireless Old Protocol WriteRead
     def f8WriteRead(self, logical_id, command, input_list=None):
         command_args = self.command_dict[command]
         cmd_byte, out_len, out_struct, in_len, in_struct, compatibility = command_args
@@ -2868,17 +2891,17 @@ class TSDongle(_TSBase):
         write_array = makeWriteArray(0xf8, logical_id, cmd_byte, packed_data)
         self.serial_port.write(write_array)
         rtn_list = []
-        output_data = serial_port.read(2)
+        output_data = self.serial_port.read(2)
         if len(output_data) == 2:
             fail_byte = struct.unpack('>B', output_data[0])[0]
             logical_id_byte = struct.unpack('>B', output_data[1])[0]
             rtn_list.append(fail_byte)
             if not fail_byte:
-                serial_port.read(1)
+                self.serial_port.read(1)
             else:
                 return True
             if out_struct:
-                output_data = serial_port.read(out_len)
+                output_data = self.serial_port.read(out_len)
                 rtn_list.append(struct.unpack(out_struct, output_data))
             if len(rtn_list) != 1:
                 return rtn_list
@@ -2899,49 +2922,68 @@ class TSDongle(_TSBase):
             else:
                 packed_data=struct.pack(in_struct, input_list)
         write_array = makeWriteArray(0xfa, logical_id, cmd_byte, packed_data)
-########################################################
-        # print('readWirelessSlotsOpen={0}'.format(self.writeRead('readWirelessSlotsOpen')[2]))
-        while len(self.read_queue) > 12:
+        
+        while len(self.read_queue) > 15:
             _print("!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!too many commands!!!!!")
             time.sleep(0.01)
         self.read_lock.acquire()
         uid = global_counter
         global_counter += 1
         try:
-            self.serial_port.write(write_array) #release in reader thread
+            self.serial_port.write(write_array) # release in reader thread
         except serial.SerialTimeoutException:
             self.read_lock.release()
             self.serial_port.close()
-            _print("SerialTimeoutException!!!!")
-            #!!!!!Reconnect
+            # _print("SerialTimeoutException!!!!")
             return (True, None, None)
         except ValueError:
             try:
-                _print("trying to open it back up!!!!")
+                # _print("trying to open it back up!!!!")
                 self.serial_port.open()
-                _print("aaand open!!!!")
+                # _print("aaand open!!!!")
             except serial.SerialException:
                 self.read_lock.release()
-            _print("SerialTimeoutException!!!!")
-            #!!!!!Reconnect
+            # _print("SerialTimeoutException!!!!")
             return (True, None, None)
-        self.read_queue.append((uid, cmd_byte))
-        self.read_lock.wait(1)
+        queue_packet = (uid, cmd_byte)
+        timeout_time = 0.5 + (len(self.read_queue) * 0.150) # timeout increases as queue gets larger
+        self.read_queue.append(queue_packet)
+        start_time = time.clock() + timeout_time
+        read_data = None
+        while(timeout_time > 0):
+            self.read_lock.wait(timeout_time)
+            read_data = self.read_dict.get(uid, None)
+            
+            if read_data is not None:
+                break
+            timeout_time =start_time -time.clock()
+            # _print("Still waiting {0} {1} {2} {3}".format(uid, command,logical_id, timeout_time))
+        else:
+            # _print("Operation timed out!!!!")
+            try:
+                self.read_queue.remove(queue_packet)
+            except:
+                traceback.print_exc()
+            self.read_lock.release()
+            return (True, None, None)
         self.read_lock.release()
-        read_data = self.read_dict.get(uid, None)
-        if read_data is None:
-            _print("Operation timed out!!!!")
-            return (True, None, None)
         del self.read_dict[uid]
-        header_list, output_data =read_data
+        header_list, output_data = read_data
         fail_byte, timestamp, cmd_echo, ck_sum, rtn_log_id, sn, data_size = header_list
+        # _print("RESponse  {0} {1} {2} {3}".format(uid, command,logical_id, timeout_time))
+        if logical_id != rtn_log_id:
+            # _print("!!!!!!!!logical_id != rtn_log_id!!!!!")
+            # _print(header_list)
+            # _hexDump(output_data, 'o')
+            # _print('!!!!!inWaiting = {0}'.format(self.serial_port.inWaiting()))
+            return (True, timestamp, None)
         if cmd_echo != cmd_byte:
-            _print("!!!!!!!!cmd_echo!=cmd_byte!!!!!")
-            _print('cmd_echo= 0x{0:02x} cmd_byte= 0x{1:02x}'.format(cmd_echo, cmd_byte))
-            _print(header_list)
-            _hexDump(output_data, 'o')
-            _print('!!!!!inWaiting = {0}'.format(self.serial_port.inWaiting()))
-            _print('!!!!!!end')
+            # _print("!!!!!!!!cmd_echo!=cmd_byte!!!!!")
+            # _print('cmd_echo= 0x{0:02x} cmd_byte= 0x{1:02x}'.format(cmd_echo, cmd_byte))
+            # _print(header_list)
+            # _hexDump(output_data, 'o')
+            # _print('!!!!!inWaiting = {0}'.format(self.serial_port.inWaiting()))
+            # _print('!!!!!!end')
             return (True, timestamp, None)
         rtn_list = None
         if not fail_byte:
@@ -2949,8 +2991,13 @@ class TSDongle(_TSBase):
                 rtn_list = struct.unpack(out_struct, output_data)
                 if len(rtn_list) == 1:
                     rtn_list = rtn_list[0]
+            elif cmd_echo == 0x54:
+                rtn_list = self[logical_id].stream_parse.unpack(output_data)
+                if len(rtn_list) == 1:
+                    rtn_list = rtn_list[0]
         else:
-            _print("fail_byte!!!!triggered")
+            # _print("fail_byte!!!!triggered")
+            pass
         self._read_data = None
         return (fail_byte, timestamp, rtn_list)
     
@@ -2969,7 +3016,7 @@ class TSDongle(_TSBase):
             return None
         # Else, make a new TSWLSensor
         else:
-            _print("making new sensor {0:08X} not found".format(hw_id))
+            _print("making new sensor {0:08X}".format(hw_id))
             return TSWLSensor(timestamp_mode=self.timestamp_mode, dongle=self, logical_id=idx)
     
     def getSensorFromDongle(self, idx):
@@ -3004,12 +3051,12 @@ class TSDongle(_TSBase):
                 self._readDataWirelessProHeader()
             except(KeyboardInterrupt):
                 print('\n! Received keyboard interrupt, quitting threads.\n')
-                raise KeyboardInterrupt #fix bug where a thread eats the interupt
+                raise KeyboardInterrupt # fix bug where a thread eats the interupt
                 break
             except:
-                traceback.print_exc()
-                _print("bad readAsyncData parse")
-                _print('!!!!!inWaiting = {0}'.format(self.serial_port.inWaiting()))
+                # traceback.print_exc()
+                # _print("bad _parseStreamData parse")
+                # _print('!!!!!inWaiting = {0}'.format(self.serial_port.inWaiting()))
                 try:
                     self.read_lock.release()
                 except:
@@ -3017,56 +3064,50 @@ class TSDongle(_TSBase):
     
     def _readDataWirelessProHeader(self):
         _serial_port = self.serial_port
-        in_wait = _serial_port.inWaiting()
-        if in_wait:
-            _print('!1025! inWaiting = {0}'.format(in_wait))
+        # in_wait = _serial_port.inWaiting()
+        # if in_wait:
+            # _print('!1025! inWaiting = {0}'.format(in_wait))
         header_bytes = _serial_port.read(self.header_parse.size)
         if header_bytes:
-            _hexDump(header_bytes, 'o')
+            # _hexDump(header_bytes, 'o')
             if self.timestamp_mode == TSS_TIMESTAMP_SENSOR:
                 header_data = self.header_parse.unpack(header_bytes)
-                header_list = padProtocolHeader87(header_data) #todo make func from _generateProtocolHeader
+                header_list = padProtocolHeader87(header_data)
             elif self.timestamp_mode == TSS_TIMESTAMP_SYSTEM:
-                sys_timestamp = time.clock() #time packet was parsed it might been in the system buffer a few ms
+                sys_timestamp = time.clock() # time packet was parsed it might been in the system buffer a few ms
                 sys_timestamp *= 1000000
                 header_data = self.header_parse.unpack(header_bytes)
-                header_list = padProtocolHeader85(header_data, sys_timestamp) #todo make func from _generateProtocolHeader
+                header_list = padProtocolHeader85(header_data, sys_timestamp)
             else:
                 header_data = self.header_parse.unpack(header_bytes)
-                header_list = padProtocolHeader85(header_data, None) #todo make func from _generateProtocolHeader
+                header_list = padProtocolHeader85(header_data, None)
             fail_byte, timestamp, cmd_echo, ck_sum, rtn_log_id, sn, data_size = header_list
-            _print("!!!!fail_byte={0}, cmd_echo={1}, rtn_log_id={2}, data_size={3}".format(fail_byte, cmd_echo, rtn_log_id, data_size))
-            if fail_byte and data_size != 0: #!!!!!remove
-                _print("Datasize in a failed comand={0}".format(header_list)) #!!!!!remove
-                _hexDump(header_bytes, '!o') #!!!!!remove
-                output_data = None #!!!!!remove
-            else:#!!!!!remove
-                output_data = _serial_port.read(data_size)
-                _hexDump(header_bytes, 'o')
-                _hexDump(output_data, 'o')
+            # _print("!!!!fail_byte={0}, cmd_echo={1}, rtn_log_id={2}, data_size={3}".format(fail_byte, cmd_echo, rtn_log_id, data_size))
+            output_data = _serial_port.read(data_size)
+            
             if cmd_echo is 0xff:
                 if data_size:
                     self[rtn_log_id]._parseStreamData(timestamp, output_data)
                 return
             self.read_lock.acquire()
-            _print('retrning data!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!')
-            if len(self.read_queue): #here for a bug in the code
+            # _print('retrning data!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!')
+            if len(self.read_queue): # here for a bug in the code
                 uid, cmd_byte = self.read_queue.popleft()
                 if cmd_byte == cmd_echo:
                     self.read_dict[uid] = (header_list, output_data)
-                    self.read_lock.notify() #dies in 3 seconds if there is a writeRead in wait
+                    self.read_lock.notifyAll() # dies in 3 seconds if there is a writeRead in wait
                 else:
-                    _print('Unrequested packet found!!!')
-                    _hexDump(header_bytes, 'o')
-                    _hexDump(output_data, 'o')
+                    # _print('Unrequested packet found!!!')
+                    # _hexDump(header_bytes, 'o')
+                    # _hexDump(output_data, 'o')
                     self.read_queue.appendleft((uid, cmd_byte))
                 self.read_lock.release()
                 return
-            _print('Unrequested packet found (read_queue is empty)!!!')
-            _hexDump(header_bytes, 'o')
-            _hexDump(output_data, 'o')
+            # _print('Unrequested packet found (read_queue is empty)!!!')
+            # _hexDump(header_bytes, 'o')
+            # _hexDump(output_data, 'o')
+            # _print("no status bytes")
             self.read_lock.release()
-            _print("no status bytes")
     
     ## 209(0xd1)
     def setSerialNumberAtLogicalID(self, logical_id, serial_number, timestamp=False):
@@ -3078,7 +3119,7 @@ class TSDongle(_TSBase):
             return (not fail_byte, t_stamp)
         return not fail_byte
     
-####### Generated functions DNG
+## generated functions DNG
     ## 176(0xb0)
     def setWirelessStreamingAutoFlushMode(self, mode, timestamp=False):
         fail_byte, t_stamp, data = self.writeRead('setWirelessStreamingAutoFlushMode', mode)
@@ -3246,7 +3287,7 @@ class TSDongle(_TSBase):
         if timestamp:
             return (data, t_stamp)
         return data
-####### Generated functions DNG
+## END generated functions DNG
 
 
 class TSEMSensor(_TSSensor):
@@ -3259,12 +3300,10 @@ class TSEMSensor(_TSSensor):
         'getUARTBaudRate': (0xe8, 4, '>I', 0, None, 1)
         })
     
-    reverse_command_dict = dict(
-                map(lambda x: [x[1][0], x[0]], command_dict.items())
-            )
+    reverse_command_dict = dict(map(lambda x: [x[1][0], x[0]], command_dict.items()))
     
+    _device_types = ["EM", "EM-HH"]
     def __new__(cls, com_port=None, baudrate=_baudrate, timestamp_mode=TSS_TIMESTAMP_SENSOR):
-        device_type = "EM"
         if com_port is None:
             return None
         if com_port:
@@ -3273,7 +3312,7 @@ class TSEMSensor(_TSSensor):
             elif type(com_port) is ComInfo:
                 port_name = com_port.com_port
             else:
-                _print("An erronous parameter was passed in  TODO")
+                _print("An erronous parameter was passed in")
                 return None
             if baudrate not in _allowed_baudrates:
                 baudrate = _baudrate
@@ -3281,11 +3320,10 @@ class TSEMSensor(_TSSensor):
             serial_port = serial.Serial(port_name, baudrate=baudrate, timeout=0.5, writeTimeout=0.5)
             if serial_port is not None:
                 new_inst = super(_TSSensor, cls).__new__(cls)
-                new_inst.device_type = device_type
                 serial_port.write(bytearray((0xf7, 0x56, 0x56)))
                 time.sleep(0.01)
                 serial_port.flushInput()
-                return _generateSensorClass(new_inst, serial_port)
+                return _generateSensorClass(new_inst, serial_port, TSEMSensor._device_types)
         _print('Error serial port was not made')
     
     ## 231(0xe7)
@@ -3297,7 +3335,7 @@ class TSEMSensor(_TSSensor):
             return (not fail_byte, t_stamp)
         return not fail_byte
     
-####### Generated functions Embedded
+## generated functions EM_
     ##  29(0x1d)
     def setPinMode(self, mode, pin, timestamp=False):
         arg_list = (mode, pin)
@@ -3326,7 +3364,7 @@ class TSEMSensor(_TSSensor):
         if timestamp:
             return (data, t_stamp)
         return data
-####### Generated functions Embedded END
+## END generated functions EM_
 
 
 class TSDLSensor(_TSSensor):
@@ -3345,12 +3383,10 @@ class TSDLSensor(_TSSensor):
         'getButtonState': (0xfa, 1, '>B', 0, None, 1)
         })
     
-    reverse_command_dict = dict(
-                map(lambda x: [x[1][0], x[0]], command_dict.items())
-            )
+    reverse_command_dict = dict(map(lambda x: [x[1][0], x[0]], command_dict.items()))
     
+    _device_types = ["DL", "DL-HH"]
     def __new__(cls, com_port=None, baudrate=_baudrate, timestamp_mode=TSS_TIMESTAMP_SENSOR):
-        device_type = "DL"
         if com_port is None:
             return None
         if com_port:
@@ -3359,7 +3395,7 @@ class TSDLSensor(_TSSensor):
             elif type(com_port) is ComInfo:
                 port_name = com_port.com_port
             else:
-                _print("An erronous parameter was passed in  TODO")
+                _print("An erronous parameter was passed in")
                 return None
             if baudrate not in _allowed_baudrates:
                 baudrate = _baudrate
@@ -3367,14 +3403,13 @@ class TSDLSensor(_TSSensor):
             serial_port = serial.Serial(port_name, baudrate=baudrate, timeout=0.5, writeTimeout=0.5)
             if serial_port is not None:
                 new_inst = super(_TSSensor, cls).__new__(cls)
-                new_inst.device_type = device_type
                 serial_port.write(bytearray((0xf7, 0x56, 0x56)))
                 time.sleep(0.01)
                 serial_port.flushInput()
-                return _generateSensorClass(new_inst, serial_port)
+                return _generateSensorClass(new_inst, serial_port, TSDLSensor._device_types)
         _print('Error serial port was not made')
     
-####### Generated functions Datalogger
+## generated functions DL_
     ##  57(0x39)
     def turnOnMassStorage(self, timestamp=False):
         fail_byte, t_stamp, data = self.writeRead('turnOnMassStorage')
@@ -3452,7 +3487,7 @@ class TSDLSensor(_TSSensor):
         if timestamp:
             return (data, t_stamp)
         return data
-####### Generated functions Datalogger END
+## END generated functions DL_
 
 
 class TSBTSensor(_TSSensor):
@@ -3466,12 +3501,10 @@ class TSBTSensor(_TSSensor):
         'getButtonState': (0xfa, 1, '>B', 0, None, 1)
         })
     
-    reverse_command_dict = dict(
-                map(lambda x: [x[1][0], x[0]], command_dict.items())
-            )
+    reverse_command_dict = dict(map(lambda x: [x[1][0], x[0]], command_dict.items()))
     
+    _device_types = ["BT", "BT-HH"]
     def __new__(cls, com_port=None, baudrate=_baudrate, timestamp_mode=TSS_TIMESTAMP_SENSOR):
-        device_type = "BT"
         if com_port is None:
             return None
         if com_port:
@@ -3480,7 +3513,7 @@ class TSBTSensor(_TSSensor):
             elif type(com_port) is ComInfo:
                 port_name = com_port.com_port
             else:
-                _print("An erronous parameter was passed in  TODO")
+                _print("An erronous parameter was passed in")
                 return None
             if baudrate not in _allowed_baudrates:
                 baudrate = _baudrate
@@ -3488,11 +3521,10 @@ class TSBTSensor(_TSSensor):
             serial_port = serial.Serial(port_name, baudrate=baudrate, timeout=2.5, writeTimeout=2.5)
             if serial_port is not None:
                 new_inst = super(_TSSensor, cls).__new__(cls)
-                new_inst.device_type = device_type
                 serial_port.write(bytearray((0xf7, 0x56, 0x56)))
                 time.sleep(0.25)
                 serial_port.flushInput()
-                return _generateSensorClass(new_inst, serial_port)
+                return _generateSensorClass(new_inst, serial_port, TSBTSensor._device_types)
         _print('Error serial port was not made')
     
     ## 231(0xe7)
@@ -3504,7 +3536,7 @@ class TSBTSensor(_TSSensor):
             return (not fail_byte, t_stamp)
         return not fail_byte
     
-####### Generated functions Bluetooth
+## generated functions BT_
     ## 201(0xc9)
     def getBatteryVoltage(self, timestamp=False):
         fail_byte, t_stamp, data = self.writeRead('getBatteryVoltage')
@@ -3539,10 +3571,7 @@ class TSBTSensor(_TSSensor):
         if timestamp:
             return (data, t_stamp)
         return data
-####### Generated functions Bluetooth END
+## END generated functions BT_
+
 
 global_broadcaster= Broadcaster()
-
-### Main ###
-if __name__ == '__main__':
-    pass

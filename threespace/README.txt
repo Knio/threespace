@@ -41,6 +41,23 @@ try_port folder - This folder contains the files necissary for running the
 #Change Notes#
 ##############
 
+2.0.2.3 - Fixed an issue with uknown ports in the getDeviceInfoFromComPort
+    function.
+
+2.0.2.2 - Fixed issue with the TSDongle's f8WriteRead function.
+
+2.0.2.1 - Fixed issue with high range versions of the sensors. Added functions
+    for getting and setting the amount of wireless retries the Python API will
+    perform.
+
+2.0.2.0 - Fixed issue when a dongle's wireless table uses an abbreviated serial
+    number. Upped the read queue to 15. Fixed timeout from never being removed
+    from the read queue. Improved the timeout routine and increased timeout of
+    commands. Changed Broadcaster retries default to 10. Added a dynamic timeout
+    to accommodate a larger queued read/write. Fixed some minor bugs with
+    debugging and the micro and water-tight devices. The getStreamingBatch
+    function now works.
+
 2.0.1.0 - Added file threespace_utils.py so that the API can be cross-platform.
     Merged files yei_list_ports_fix.py and yei_bluetooth_utils.py with
     win32_threespace_utils.py to condense the code.
@@ -197,6 +214,6 @@ Portsmouth, OH 45662
 (740) 355-9029
 support@yeitechnology.com
 
-©2013 YEI Corporation
+©2014 YEI Corporation
 
-rev. 13 Jun 2013
+rev. 17 Feb 2014

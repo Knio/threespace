@@ -1,12 +1,12 @@
 #!/usr/bin/env python2.7
 
-"""This module is a utility module for Windows.
-
-The Win32 ThreeSpace Utils module is a collection of classes, functions,
-structures, and static variables use exclusivly for Windows. All functions in
-this module are used to scan for available ThreeSpace devices on the host system
-and information on them. This module can be used with a system running
-Python 2.5 and newer (including Python 3.x).
+""" This module is a utility module for Windows.
+    
+    The Win32 ThreeSpace Utils module is a collection of classes, functions,
+    structures, and static variables use exclusivly for Windows. All functions
+    in this module are used to scan for available ThreeSpace devices on the host
+    system and information on them. This module can be used with a system
+    running Python 2.5 and newer (including Python 3.x).
 """
 
 __authors__ = [
@@ -107,7 +107,7 @@ class GUID(ctypes.Structure):
         ('Data3', WORD),
         ('Data4', BYTE * 8),
     ]
-
+    
     def __str__(self):
         return "{%08X-%04X-%04X-%s-%s}" % (
             self.Data1,
@@ -125,7 +125,7 @@ class SP_DEVINFO_DATA(ctypes.Structure):
         ('DevInst', DWORD),
         ('Reserved', ULONG_PTR),
     ]
-
+    
     def __str__(self):
         return "ClassGuid:%s DevInst:%s" % (self.ClassGuid, self.DevInst)
 
@@ -137,7 +137,7 @@ class SP_DEVICE_INTERFACE_DATA(ctypes.Structure):
         ('Flags', DWORD),
         ('Reserved', ULONG_PTR),
     ]
-
+    
     def __str__(self):
         return "InterfaceClassGuid:%s Flags:%s" % (self.InterfaceClassGuid, self.Flags)
 
@@ -161,10 +161,10 @@ class BLUETOOTH_ADDRESS(ctypes.Union):
         ('ullLong', BTH_ADDR),
         ('rgBytes', UCHAR * 6),
     ]
-
+    
     def __str__(self):
         return self.__repr__()
-
+    
     def __repr__(self):
         addr_str = ""
         for i in range(len(self.rgBytes) - 1, -1, -1):
@@ -175,7 +175,7 @@ class BLUETOOTH_ADDRESS(ctypes.Union):
                 tmp_str += ":"
             addr_str += tmp_str
         return addr_str
-
+    
     def __eq__(self, other):
         if str(self) == str(other):
             return True
@@ -194,21 +194,42 @@ class SYSTEMTIME(ctypes.Structure):
         ('wSecond', WORD),
         ('wMilliseconds', WORD),
     ]
-
+    
     def __str__(self):
         month_map = {
-            0: "Month_Zero", 1: "January", 2: "February", 3: "March",
-            4: "April", 5: "May", 6: "June", 7: "July", 8: "August",
-            9: "September", 10: "October", 11: "November", 12: "December"
+            0: "Month_Zero",
+            1: "January",
+            2: "February",
+            3: "March",
+            4: "April",
+            5: "May",
+            6: "June",
+            7: "July",
+            8: "August",
+            9: "September",
+            10: "October",
+            11: "November",
+            12: "December"
         }
         day_of_week_map = {
-            0: "Sunday", 1: "Monday", 2: "Tuesday", 3: "Wednesday",
-            4: "Thursday", 5: "Friday", 6: "Saturday"
+            0: "Sunday",
+            1: "Monday",
+            2: "Tuesday",
+            3: "Wednesday",
+            4: "Thursday",
+            5: "Friday",
+            6: "Saturday"
         }
-        return (day_of_week_map[self.wDayOfWeek] + ", " + month_map[self.wMonth]
-                + " " + str(self.wDay) + ", " + str(self.wYear) + "\n" +
-                str(self.wHour) + ":" + str(self.wMinute) + ":" +
-                str(self.wSecond) + "." + str(self.wMilliseconds))
+        return "%s, %s %d, %d\n%d:%d:%d.%d" % (
+            day_of_week_map[self.wDayOfWeek],
+            month_map[self.wMonth],
+            self.wDay,
+            self.wYear,
+            self.wHour,
+            self.wMinute,
+            self.wSecond,
+            self.wMilliseconds
+        )
 
 
 class BLUETOOTH_DEVICE_INFO(ctypes.Structure):
@@ -223,7 +244,7 @@ class BLUETOOTH_DEVICE_INFO(ctypes.Structure):
         ('stLastUsed', SYSTEMTIME),
         ('szName', WCHAR * BLUETOOTH_MAX_NAME_SIZE),
     ]
-
+    
     def __str__(self):
         class_str = hex(self.ulClassofDevice)
         if class_str[-1] == "L":
@@ -242,15 +263,17 @@ class BLUETOOTH_DEVICE_INFO(ctypes.Structure):
             authenticated_str = "False"
         else:
             authenticated_str = "True"
-        return ("Size: " + str(self.cbSize) + "\n" +
-                "Address: " + str(self.Address) + "\n" +
-                "Class Of Device: " + class_str + "\n" +
-                "Connected: " + connected_str + "\n" +
-                "Remembered: " + remembered_str + "\n" +
-                "Authenticated: " + authenticated_str + "\n" +
-                "Last Seen: " + str(self.stLastSeen) + "\n" +
-                "Last Used: " + str(self.stLastUsed) + "\n" +
-                "Name: " + str(self.szName))
+        return (
+            "Size: %d\n"            % self.cbSize +
+            "Address: %s\n"         % str(self.Address) +
+            "Class Of Device: %s\n" % class_str +
+            "Connected: %s\n"       % connected_str +
+            "Remembered: %s\n"      % remembered_str +
+            "Authenticated: %s\n"   % authenticated_str +
+            "Last Seen: %s\n"       % str(self.stLastSeen) +
+            "Last Used: %s\n"       % str(self.stLastUsed) +
+            "Name: %s"              % str(self.szName)
+        )
 
 ### Helper Functions ###
 if sys.version_info >= (3, 0):
@@ -284,29 +307,34 @@ def _validHandle(value, func, arguments):
 
 
 def _stringToGUID(GUID_string):
-    """Assuming GUID string is formatted as such:
-        '{XXXXXXXX-XXXX-XXXX-XXXXXXXXXXXX}'
+    """ Assuming GUID string is formatted as such:
+            '{XXXXXXXX-XXXX-XXXX-XXXXXXXXXXXX}'
     """
-    return GUID(toLong(GUID_string[1:9], 16),
-                toLong(GUID_string[10:14], 16),
-                toLong(GUID_string[15:19], 16),
-                (BYTE * 8)(int(GUID_string[20:22], 16),
-                            int(GUID_string[22:24], 16),
-                            int(GUID_string[25:27], 16),
-                            int(GUID_string[27:29], 16),
-                            int(GUID_string[29:31], 16),
-                            int(GUID_string[31:33], 16),
-                            int(GUID_string[33:35], 16),
-                            int(GUID_string[35:37], 16)))
+    return GUID(
+        toLong(GUID_string[1:9], 16),
+        toLong(GUID_string[10:14], 16),
+        toLong(GUID_string[15:19], 16),
+        (BYTE * 8)(
+            int(GUID_string[20:22], 16),
+            int(GUID_string[22:24], 16),
+            int(GUID_string[25:27], 16),
+            int(GUID_string[27:29], 16),
+            int(GUID_string[29:31], 16),
+            int(GUID_string[31:33], 16),
+            int(GUID_string[33:35], 16),
+            int(GUID_string[35:37], 16)
+           )
+    )
 
 
 def _stringToBluetoothAddress(address_string):
-    """Assumming address string is formatted as such:
-        'XXXXXXXXXXXX'
+    """ Assumming address string is formatted as such:
+            'XXXXXXXXXXXX'
     """
     tmp_addr = BLUETOOTH_ADDRESS()
     tmp_addr.ullLong = toLong(address_string, 16)
     return tmp_addr
+
 
 ### Structures/Class Pointers ###
 PSP_DEVINFO_DATA = ctypes.POINTER(SP_DEVINFO_DATA)
@@ -357,7 +385,7 @@ GUID_DEVINTERFACE_COMPORT = GUID(toLong(0x86E0D1E0), 0x8089, 0x11D0, (BYTE * 8)(
 ### Functions ###
 def _getBluetoothDevices():
     found_devices = []
-
+    
     ## Create our needed structures
     m_SearchParams = BLUETOOTH_DEVICE_SEARCH_PARAMS()
     m_SearchParams.cbSize = ctypes.sizeof(m_SearchParams)
@@ -370,7 +398,7 @@ def _getBluetoothDevices():
     m_SearchParams.hRadio = 0 # Search all available radios
     m_DeviceInfo = BLUETOOTH_DEVICE_INFO()
     m_DeviceInfo.cbSize = ctypes.sizeof(m_DeviceInfo)
-
+    
     device_find_handle = bthprops.BluetoothFindFirstDevice(ctypes.byref(m_SearchParams), ctypes.byref(m_DeviceInfo))
     if device_find_handle == 0:
         # We failed to find a device
@@ -405,7 +433,7 @@ def _getBluetoothDevices():
                         raise Exception("FindNextDevice: Unknown function error: %d" % error_code)
             else:
                 found_devices.append(copy.deepcopy(m_DeviceInfo))
-
+    
     return found_devices
 
 
@@ -416,26 +444,27 @@ def _yeiGrep(reg_exp):
 
 
 def _yeiComPorts():
-    """This generator scans the device registry for com ports and yields port, desc, hw_id"""
-
+    """ This generator scans the device registry for com ports and yields port,
+        desc, hw_id
+    """
+    
     GUID_list = [GUID_DEVINTERFACE_SERENUM_BUS_ENUMERATOR, GUID_DEVINTERFACE_COMPORT]
     ports_yielded = []
     bt_device_list = None
-
+    
     for device_GUID in GUID_list:
-        g_hdi = SetupDiGetClassDevs(ctypes.byref(device_GUID), None, NULL,
-                                        DIGCF_PRESENT|DIGCF_DEVICEINTERFACE)
+        g_hdi = SetupDiGetClassDevs(ctypes.byref(device_GUID), None, NULL, DIGCF_PRESENT|DIGCF_DEVICEINTERFACE)
         for dw_index in range(256):
             friendly_name_string = ""
             did = SP_DEVICE_INTERFACE_DATA()
             did.cbSize = ctypes.sizeof(did)
-
+            
             if not SetupDiEnumDeviceInterfaces(g_hdi, None, ctypes.byref(device_GUID), dw_index, ctypes.byref(did)):
                 if ctypes.GetLastError() != ERROR_NO_MORE_ITEMS:
                     if '-d' in sys.argv:
                         raise ctypes.WinError()
                 break
-
+            
             dw_needed = DWORD()
             # Get the size
             if not SetupDiGetDeviceInterfaceDetail(g_hdi, ctypes.byref(did), None, 0, ctypes.byref(dw_needed), None):
@@ -443,29 +472,29 @@ def _yeiComPorts():
                 if ctypes.GetLastError() != ERROR_INSUFFICIENT_BUFFER:
                     if '-d' in sys.argv:
                         raise ctypes.WinError()
-
+            
             # Allocate buffer
             class SP_DEVICE_INTERFACE_DETAIL_DATA_A(ctypes.Structure):
                 _fields_ = [
                     ('cbSize', DWORD),
                     ('DevicePath', CHAR * (dw_needed.value - ctypes.sizeof(DWORD))),
                 ]
-
+                
                 def __str__(self):
                     return "DevicePath: %s" % self.DevicePath
-
+            
             idd = SP_DEVICE_INTERFACE_DETAIL_DATA_A()
             if is_64bit():
                 idd.cbSize = 8
             else:
                 idd.cbSize = 5
-
+            
             dev_info = SP_DEVINFO_DATA()
             dev_info.cbSize = ctypes.sizeof(dev_info)
             if not SetupDiGetDeviceInterfaceDetail(g_hdi, ctypes.byref(did), ctypes.byref(idd), dw_needed, None, ctypes.byref(dev_info)):
                 if '-d' in sys.argv:
                     raise ctypes.WinError()
-
+            
             # hardware ID
             sz_hardware_id = _byteBuffer(1024)
             if not SetupDiGetDeviceRegistryProperty(g_hdi, ctypes.byref(dev_info), SPDRP_HARDWAREID, None, ctypes.byref(sz_hardware_id), ctypes.sizeof(sz_hardware_id) - 1, None):
@@ -473,7 +502,7 @@ def _yeiComPorts():
                 if ctypes.GetLastError() != ERROR_INSUFFICIENT_BUFFER:
                     if '-d' in sys.argv:
                         raise ctypes.WinError()
-
+            
             #Build VID/PID string
             vid_pid_string = ""
             hw_string = _string(sz_hardware_id)
@@ -486,36 +515,35 @@ def _yeiComPorts():
                 pid_end = hw_string.find("&", pid_idx + 1)
                 pid = hw_string[pid_idx:pid_end]
                 vid_pid_string = vid + "&" + pid
-
+            
             enum_name_buff = _byteBuffer(1024)
             if SetupDiGetDeviceRegistryProperty(g_hdi, ctypes.byref(dev_info), SPDRP_ENUMERATOR_NAME, None, ctypes.byref(enum_name_buff), ctypes.sizeof(enum_name_buff) - 1, None):
                 if _string(enum_name_buff).upper() == "BTHENUM":
-                    # This is a bluetooth enumerator, we should do further investigation
+                    # This is a bluetooth enumerator, we should do further
+                    # investigation
                     if bt_device_list is None:
                         bt_device_list = _getBluetoothDevices()
-
-                    guid_buff = _byteBuffer(1024)
-                    if SetupDiGetDeviceRegistryProperty(g_hdi, ctypes.byref(dev_info), SPDRP_CLASSGUID, None, ctypes.byref(guid_buff), ctypes.sizeof(guid_buff) - 1, None):
-                        guid_string = _string(guid_buff)
-                        tmp_GUID = _stringToGUID(guid_string)
-                        device_path_str = idd.DevicePath
-                        if type(device_path_str) is bytes:
-                            device_path_str = bytes.decode(device_path_str)
-                        start_idx = device_path_str.rfind("&") + 1
-                        end_idx = start_idx + 12
-                        bt_addr_string = device_path_str[start_idx:end_idx]
-                        bt_address = _stringToBluetoothAddress(bt_addr_string)
-                        connected_dev = None
-                        for bt_dev in bt_device_list:
-                            if bt_dev.Address == bt_address:
-                                connected_dev = bt_dev
-                                break
-                        if connected_dev is not None:
-                            if (str(connected_dev.szName).find("YEI_3SpaceBT") != -1):
-                                # The device is a 3-Space Sensor!
-                                vid_pid_string = "VID_2476&PID_1060"
-                                friendly_name_string = "3 Space Bluetooth over Bluetooth link"
-
+                    
+                    device_path_str = idd.DevicePath
+                    if type(device_path_str) is bytes:
+                        device_path_str = bytes.decode(device_path_str)
+                    start_idx = device_path_str.rfind("&") + 1
+                    end_idx = start_idx + 12
+                    bt_addr_string = device_path_str[start_idx:end_idx]
+                    bt_address = _stringToBluetoothAddress(bt_addr_string)
+                    if bt_address == _stringToBluetoothAddress("0"):
+                        continue
+                    connected_dev = None
+                    for bt_dev in bt_device_list:
+                        if bt_dev.Address == bt_address:
+                            connected_dev = bt_dev
+                            break
+                    if connected_dev is not None:
+                        if (str(connected_dev.szName).find("YEI_3SpaceBT") != -1):
+                            # The device is a 3-Space Sensor!
+                            vid_pid_string = "VID_2476&PID_1060"
+                            friendly_name_string = "3 Space Bluetooth over Bluetooth link "
+            
             sz_friendly_name = _byteBuffer(1024)
             if not SetupDiGetDeviceRegistryProperty(g_hdi, ctypes.byref(dev_info), SPDRP_FRIENDLYNAME, None, ctypes.byref(sz_friendly_name), ctypes.sizeof(sz_friendly_name) - 1, None):
                 # Ignore ERROR_INSUFFICIENT_BUFFER
@@ -530,8 +558,9 @@ def _yeiComPorts():
                 port_name_length = ULONG(ctypes.sizeof(port_name_buffer))
                 RegQueryValueEx(h_key, PortName, None, None, ctypes.byref(port_name_buffer), ctypes.byref(port_name_length))
                 RegCloseKey(h_key)
-
-                # We either use the generated friendly name or our overridden one, with preference to the overridden one.
+                
+                # We either use the generated friendly name or our overridden
+                # one, with preference to the overridden one.
                 if friendly_name_string == "":
                     friendly_name_string = _string(sz_friendly_name)
                 else:
@@ -543,18 +572,22 @@ def _yeiComPorts():
 
 
 def getComPorts(filter=TSS_FIND_ALL):
-    """ Queries the system for all available serial COM ports and returns a list of them.
-
+    """ Queries the system for all available serial COM ports and returns a list
+        of them.
+        
         Args:
             filter: An interger denoting a flag of what 3-Space Sensors device
                 type to be found (default is TSS_FIND_ALL)
-
+        
         Returns:
-            A list of all known serial COM ports. Each element of the list is a tuple formatted as such:
-                (COM_PORT_NAME, FRIENDLY_NAME, 3-SPACE_DEVICE_TYPE)
+            A list of all known serial COM ports. Each element of the list is a
+                tuple formatted as such:
+                    (COM_PORT_NAME, FRIENDLY_NAME, YEI_TECH_DEVICE_TYPE)
             Note:
-                3-SPACE_DEVICE_TYPE will be an empty string if the port's driver's vendor and product IDs do not match any known 3-Space products.
-                Possible 3-SPACE_DEVICE_TYPE strings are:
+                YEI_TECH_DEVICE_TYPE will be an empty string if the port's
+                    driver's vendor and product IDs do not match any known YEI
+                    Techology products.
+                Possible YEI_TECH_DEVICE_TYPE strings are:
                     '???' - Unknown
                     'BTL' - Bootloader (No Firmware)
                     'USB' - USB
@@ -598,38 +631,43 @@ def _getSoftwareVersionFromPort(serial_port):
         # Old firmware version remainder
         serial_port.read(9)
         raise Exception("Firmware for device on ( %s ) is out of date for this API. Recommend updating to latest firmware." % serial_port.name)
-
+    
     # Hour-minute remainder
     serial_port.read(3)
     return response
 
 
 def getDeviceInfoFromComPort(port_name, poll_device=True):
-    """ Analyzes a serial COM port of a 3-Space Sensor and returns details about the device.
-
+    """ Analyzes a serial COM port of a 3-Space Sensor and returns details about
+        the device.
+        
         Args:
             port_name: A string representing the name of the serial COM port to
                 analyze.
             poll_device: An optional boolean that controls whether the named COM
                 port is written to and queried for information about the device.
                 If this value is True, please take caution as the COM port's
-                device will be written to and may produce undesired effects if the
-                device is unknown or not a 3-Space Sensor (default is True)
-
+                device will be written to and may produce undesired effects if
+                the device is unknown or not a 3-Space Sensor (default is True)
+        
         Returns:
             A list of 5 values describing various details about the COM port's
-            device.
-            (Friendly name, 3-Space Type, 3-Space ID, 3-Space Firmware Version String,
-                3-Space Hardware Version String, isInBootloader)
-
+            device:
+                Friendly name,
+                3-Space Type,
+                3-Space ID,
+                3-Space Firmware Version String,
+                3-Space Hardware Version String,
+                isInBootloader
+        
         Raises:
             No explicit exceptions are raised.
     """
     friendly_name = ""
-    ts_type = "???"
-    ts_serial= 0
-    ts_fw_ver = ""
-    ts_hw_ver = ""
+    dev_type = "???"
+    dev_serial = 0
+    dev_fw_ver = ""
+    dev_hw_ver = ""
     in_bootloader = False
     pid_map = {
         "PID_1000": "BTL",
@@ -652,12 +690,15 @@ def getDeviceInfoFromComPort(port_name, poll_device=True):
                 if vid == "VID_2476":
                     # The VID matches the YEI vendor ID
                     if pid in pid_map:
-                        ts_type = pid_map[pid]
+                        dev_type = pid_map[pid]
             break
     if poll_device:
         tmp_port = None
         try:
-            tmp_port = serial.Serial(port_name, timeout=0.1)
+            tmp_port = serial.Serial(port_name, timeout=0.1, baudrate=115200)
+            
+            if dev_type == "BT":
+                tmp_port.timeout = 5.0
         except:
             tmp_port = None
         if tmp_port is not None:
@@ -665,39 +706,34 @@ def getDeviceInfoFromComPort(port_name, poll_device=True):
             tmp_port.write(bytearray((0xf7, 0xed, 0xed)))
             response = tmp_port.read(4)
             if len(response) == 4:
-                ts_serial = struct.unpack('>I', response)[0]
+                dev_serial = "{0:08X}".format(struct.unpack('>I', response)[0])
                 # Get the version strings (and device type if the
                 # previous method did not resolve it)
                 software_version = _getSoftwareVersionFromPort(tmp_port)
                 if software_version is not None:
                     # This is in fact a 3-Space sensor
-                    ts_fw_ver = software_version
+                    dev_fw_ver = software_version
                     tmp_port.write(bytearray((0xf7, 0xe6, 0xe6)))
                     hardware_version = convertString(tmp_port.read(32))
-                    ts_hw_ver = hardware_version
-                    if ts_type == "":
-                        ts_type = hardware_version[4:7]
-                        if ts_type[-1] == " ":
-                            ts_type = ts_type[:-1]
+                    dev_hw_ver = hardware_version
+                    if dev_type == "???":
+                        dev_type = hardware_version[4:-8].strip()
                 else:
                     tmp_port.write(bytearray((0x3f,))) # this is ascii '?'
                     response = convertString(tmp_port.read(2))
                     if response:
                         if response == "OK":
                             in_bootloader = True
-                            ts_type = "BTL"
+                            dev_type = "BTL"
                     else:
                         raise Exception("Either device on( %s ) is not a 3-Space Sensor or the firmware is out of date for this API and recommend updating to latest firmware." % port_name)
-
+            
             tmp_port.close()
-    return SensorInfo(  friendly_name,
-                        ts_type,
-                        ts_serial,
-                        ts_fw_ver,
-                        ts_hw_ver,
-                        in_bootloader)
-
-
-### Main ###
-if __name__ == '__main__':
-    pass
+    return SensorInfo(
+        friendly_name,
+        dev_type,
+        dev_serial,
+        dev_fw_ver,
+        dev_hw_ver,
+        in_bootloader
+    )

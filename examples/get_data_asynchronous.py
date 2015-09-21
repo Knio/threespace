@@ -96,13 +96,14 @@ for device_port in device_list:
 
 ## The YEI 3-Space Python API has a global broadcaster called global_broadcaster
 ## which is an instance of Broadcaster
-ts_api.global_broadcaster.setStreamingTiming(
-                                            interval=0, duration=110000000,
-                                            delay=1000000, delay_offset=12000,
-                                            filter=sensor_list)
+ts_api.global_broadcaster.setStreamingTiming(   interval=0,
+                                                duration=110000000,
+                                                delay=1000000,
+                                                delay_offset=12000,
+                                                filter=sensor_list)
 ts_api.global_broadcaster.setStreamingSlots(
                                         slot0='getTaredOrientationAsQuaternion',
-                                        slot1='getBatteryPercentRemaining',
+                                        slot1='getAllRawComponentSensorData',
                                         slot2='getButtonState',
                                         filter=sensor_list)
 ts_api.global_broadcaster.startStreaming(filter=sensor_list)
@@ -111,7 +112,7 @@ time.sleep(5)
 ts_api.global_broadcaster.stopRecordingData(filter=sensor_list)
 ts_api.global_broadcaster.stopStreaming(filter=sensor_list)
 for sensor in sensor_list:
-    print('Sensor({0}) stream_data len={1}'.format(sensor.serial_number_hex,
+    print('Sensor({0}) stream_data len={1}'.format( sensor.serial_number_hex,
                                                     len(sensor.stream_data)))
 
 ## Now close the ports.

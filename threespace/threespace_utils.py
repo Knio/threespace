@@ -1,11 +1,12 @@
 #!/usr/bin/env python2.7
 
-"""This module is a utility module used in the ThreeSpace API.
-
-The ThreeSpace Utils module is a collection of functions, structures, and static
-variables to be use exclusivly with the ThreeSpace API module to find available
-ThreeSpace devices on the host system and information on them. This module can
-be used with a system running Python 2.5 and newer (including Python 3.x).
+""" This module is a utility module used in the ThreeSpace API.
+    
+    The ThreeSpace Utils module is a collection of functions, structures, and
+    static variables to be use exclusivly with the ThreeSpace API module to find
+    available ThreeSpace devices on the host system and information on them.
+    This module can be used with a system running Python 2.5 and newer
+    (including Python 3.x).
 """
 
 __authors__ = [
@@ -35,25 +36,39 @@ TSS_FIND_ALL_KNOWN =    0x7fffffff
 TSS_FIND_ALL =          0xffffffff
 
 ### Private ###
-__version_firmware = (  time.strptime("01Jan2000", "%d%b%Y"),
-                        time.strptime("25Apr2013", "%d%b%Y"),
-                        time.strptime("21Jun2013", "%d%b%Y"),
-                        time.strptime("08Aug2013", "%d%b%Y"))
+__version_firmware = (
+    time.strptime("01Jan2000", "%d%b%Y"),
+    time.strptime("25Apr2013", "%d%b%Y"),
+    time.strptime("21Jun2013", "%d%b%Y"),
+    time.strptime("08Aug2013", "%d%b%Y")
+)
 
 ### Structures ###
-ComInfo = collections.namedtuple('ComInfo',    ('com_port',
-                                                'friendly_name',
-                                                'ts_type'))
+ComInfo = collections.namedtuple(
+    'ComInfo', (
+        'com_port',
+        'friendly_name',
+        'dev_type'
+    )
+)
 
-SensorInfo = collections.namedtuple('SensorInfo',  ('friendly_name',
-                                                    'ts_type',
-                                                    'ts_serial',
-                                                    'ts_fw_ver',
-                                                    'ts_hw_ver',
-                                                    'in_bootloader'))
+SensorInfo = collections.namedtuple(
+    'SensorInfo', (
+        'friendly_name',
+        'dev_type',
+        'dev_serial',
+        'dev_fw_ver',
+        'dev_hw_ver',
+        'in_bootloader'
+    )
+)
 
-ComPortListing = collections.namedtuple('ComPortListing', ( 'known_ports',
-                                                            'unknown_ports'))
+ComPortListing = collections.namedtuple(
+    'ComPortListing', (
+        'known_ports',
+        'unknown_ports'
+    )
+)
 
 ### Functions ###
 if sys.version_info >= (3, 0):
@@ -66,8 +81,7 @@ else:
 
 def pyTryPort(port_name, conn):
     try:
-        tmp_port = serial.Serial(port_name, timeout=0.2, writeTimeout=0.2,
-                                    baudrate=115200)
+        tmp_port = serial.Serial(port_name, timeout=0.2, writeTimeout=0.2, baudrate=115200)
     except:
         conn.send(False)
         return
@@ -87,15 +101,14 @@ def tryPort(port_name, use_subprocess=False):
         if os.name == 'nt':
             startup_info = subprocess.STARTUPINFO()
             startup_info.dwFlags |= subprocess._subprocess.STARTF_USESHOWWINDOW
-
+        
         try:
             # We assume the directory resolved by __file__ will
             # get us the directory for try_port.exe
             last_slash_idx = file_path.rfind("\\")
             try_ports_path = (file_path[:last_slash_idx] + program_name)
-            call_success = subprocess.call([try_ports_path, port_name],
-                                                startupinfo=startup_info)
-
+            call_success = subprocess.call([try_ports_path, port_name], startupinfo=startup_info)
+        
         except Exception as ex:
             if global_file_path is None:
                 print(ex)
@@ -104,20 +117,18 @@ def tryPort(port_name, use_subprocess=False):
                 # We will try to use the cached current working directory
                 # instead for try_port.exe
                 try_ports_path = (global_file_path + program_name)
-                call_success = subprocess.call([try_ports_path, port_name],
-                                                startupinfo=startup_info)
+                call_success = subprocess.call([try_ports_path, port_name], startupinfo=startup_info)
             except Exception as ex:
                 print(ex)
                 return None
-
+        
         if call_success != 0:
            return None
 
     else:
         ## Multiprocessing version of tryport
         parent_conn, child_conn = multiprocessing.Pipe()
-        tmp_process = multiprocessing.Process(target=pyTryPort,
-                                                args=(port_name, child_conn))
+        tmp_process = multiprocessing.Process(target=pyTryPort, args=(port_name, child_conn))
         tmp_process.start()
         make_port = parent_conn.recv()
         tmp_process.join()
@@ -131,7 +142,7 @@ def checkSoftwareVersionFromPort(serial_port):
     compatibility = 0
     serial_port.write(bytearray((0xf7, 0xdf, 0xdf)))
     response = convertString(serial_port.read(9))
-
+    
     if len(response) == 0:
         # Very Old firmware version
         raise Exception("Either device on( %s ) is not a 3-Space Sensor or the firmware is out of date for this API and recommend updating to latest firmware." % serial_port.name)
@@ -142,9 +153,9 @@ def checkSoftwareVersionFromPort(serial_port):
     else:
         # Hour-minute remainder
         serial_port.read(3)
-
+        
         sensor_firmware = time.strptime(response, "%d%b%Y")
-
+        
         for i in reversed(range(len(__version_firmware))):
             if sensor_firmware >= __version_firmware[i]:
                 compatibility = i
